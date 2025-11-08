@@ -1,4 +1,3 @@
-// db.js
 const mysql = require('mysql2/promise');
 require('dotenv').config();
 
@@ -14,6 +13,8 @@ const rbpool = mysql.createPool({
 });
 
 module.exports = rbpool;
+
+
 
 // // db.js
 // //DB 연결용 파일

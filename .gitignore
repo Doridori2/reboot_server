@@ -1,7 +1,4 @@
-# node modules
-node_modules/
-
-# 환경 변수 파일
+# 환경변수 파일
 .env
 
 # 로그 파일
@@ -10,3 +7,8 @@ node_modules/
 # 시스템 파일
 .DS_Store
 Thumbs.db
+
+# 패키지 관련 파일
+node_modules/
+npm-debug.log
+package-lock.json

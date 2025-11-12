@@ -42,6 +42,9 @@ rbapp.use('/posts', reactionsRouter);                  // /posts/:id/reactions �
 const topicsRouter = require('./routes/topics');       // 오늘의 주제 라우터
 rbapp.use('/topics', topicsRouter);                    // /topics 경로와 연결
 
+const emotionRoutes = require('./routes/emotion');
+rbapp.use('/emotion-diary', emotionRoutes);
+
 rbapp.get('/health', (_, res) => res.json({ ok: true })); //헬스체크 라우트 미리 추가
 
 // 기본 테스트용 라우트

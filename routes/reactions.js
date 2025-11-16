@@ -3,7 +3,7 @@ const express = require('express');
 const pool = require('../db');
 const router = express.Router();
 
-const VALID_REACTIONS = ['CHEER', 'HUG', 'SAME', 'LOVE', 'BRAVE'];
+const VALID_REACTIONS = ['CHEER','SAME','HUG','LOVE','BRAVE','HOPE','PROUD','RELAX','THANKS'];
 
 // 반응 토글
 router.post('/:postId/reactions', async (req, res) => {

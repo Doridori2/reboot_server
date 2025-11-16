@@ -31,11 +31,11 @@ router.get('/', async (req, res) => {
     const cond = cursor ? 'AND p.id < ?' : '';
     const params = cursor ? [cursor] : [];
     const [rows] = await pool.execute(
-       `SELECT p.id, p.title, p.content, p.mood_color, p.visibility, p.created_at 
-       FROM posts p
-       WHERE p.deleted_at IS NULL AND p.visibility='ANON' ${cond}
-       ORDER BY p.id DESC
-       LIMIT 20`, params
+       `SELECT p.id, p.user_id, p.title, p.content, p.mood_color, p.visibility, p.created_at 
+      FROM posts p
+      WHERE p.deleted_at IS NULL AND p.visibility='ANON' ${cond}
+      ORDER BY p.id DESC
+      LIMIT 20`, params
     );
     res.json({ items: rows, next_cursor: rows?.[rows.length-1]?.id || null });
   } catch (e) {

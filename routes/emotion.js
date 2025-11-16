@@ -49,7 +49,7 @@ router.get("/:user_id", async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const [r] = await pool.execute(
+    const [r] = await rbpool.execute(
       `DELETE FROM emotion_diary WHERE id = ?`,
       [id]
     );

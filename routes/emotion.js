@@ -45,4 +45,24 @@ router.get("/:user_id", async (req, res) => {
   }
 });
 
+// 🗑️ 감정 일기 삭제 (id 기준)
+router.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [r] = await pool.execute(
+      `DELETE FROM emotion_diary WHERE id = ?`,
+      [id]
+    );
+
+    if (r.affectedRows === 0) {
+      return res.status(404).json({ message: '이미 삭제되었거나 없는 감정 일기' });
+    }
+
+    res.json({ message: '삭제 성공' });
+  } catch (err) {
+    console.error('❌ 감정 일기 삭제 오류:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

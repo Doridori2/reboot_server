@@ -1,10 +1,10 @@
-import express from "express";
-import db from "../config/db.js";
-import dayjs from "dayjs";
+const express = require("express");
+const db = require("../config/db");
+const dayjs = require("dayjs");
 
 const router = express.Router();
 
-// 1️⃣ AI 로그 수신 → ai_logs 저장
+// 1️⃣ AI 로그 저장
 router.post("/", async (req, res) => {
   try {
     const { user_id, action_code, action_label } = req.body;
@@ -14,8 +14,8 @@ router.post("/", async (req, res) => {
     }
 
     await db.query(
-      "INSERT INTO ai_logs (user_id, action_code, action_label) VALUES (?, ?, ?)",
-      [user_id, action_code, action_label || null]
+      "INSERT INTO user_action_log (user_id, action_type) VALUES (?, ?)",
+      [user_id, action_code]   // action_code를 action_type에 저장
     );
 
     res.json({ message: "AI log saved!" });
@@ -34,8 +34,8 @@ router.post("/generate/:user_id", async (req, res) => {
     const endOfWeek = dayjs().endOf("week").format("YYYY-MM-DD");
 
     const [logs] = await db.query(
-      `SELECT action_code, DATE(detected_at) AS date 
-       FROM ai_logs 
+      `SELECT action_type, DATE(detected_at) AS date
+       FROM user_action_log
        WHERE user_id=? AND detected_at BETWEEN ? AND ?`,
       [user_id, startOfWeek, endOfWeek]
     );
@@ -55,12 +55,15 @@ router.post("/generate/:user_id", async (req, res) => {
 
     const total = Object.values(rates).reduce((a, b) => a + b, 0);
     const avg = (total / 7).toFixed(2);
-    const bestDay = Object.keys(rates).reduce((a, b) => (rates[a] > rates[b] ? a : b));
+
+    const bestDay = Object.keys(rates).reduce((a, b) =>
+      rates[a] > rates[b] ? a : b
+    );
 
     await db.query(
-      `INSERT INTO weekly_reports 
-       (user_id, week_start_date, monday_success_rate, tuesday_success_rate, wednesday_success_rate, 
-        thursday_success_rate, friday_success_rate, saturday_success_rate, sunday_success_rate, 
+      `INSERT INTO routine_reports
+       (user_id, week_start_date, monday_success_rate, tuesday_success_rate, wednesday_success_rate,
+        thursday_success_rate, friday_success_rate, saturday_success_rate, sunday_success_rate,
         weekly_average_success_rate, best_day)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -85,4 +88,4 @@ router.post("/generate/:user_id", async (req, res) => {
   }
 });
 
-export default router;
+module.exports = router;

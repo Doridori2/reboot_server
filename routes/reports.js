@@ -1,9 +1,9 @@
 // routes/reports.js
 const express = require('express');
-const router = express.Router();  // ✅ 이 한 줄이 없어서 생긴 에러
-const rbpool = require('../db'); 
+const router = express.Router();
+const rbpool = require('../db');
 
-/// GET /reports/weekly?user_id=xxx
+// GET /reports/weekly?user_id=xxx
 router.get('/weekly', async (req, res) => {
     const { user_id } = req.query;
 
@@ -16,34 +16,41 @@ router.get('/weekly', async (req, res) => {
 
         // 1️⃣ 유저가 선택한 미션 가져오기
         const [missionRows] = await conn.query(
-            `SELECT mission_label 
+            `SELECT label 
              FROM missions 
              WHERE user_id = ?`,
             [user_id]
         );
 
-        const selectedMissions = missionRows.map(m => m.mission_label);
+        const selectedMissions = missionRows.map(m => m.label);
 
-        // mission_label 예시:
-        // ["음식을 먹는다", "이를 닦는다", "물 마시기"]
-
-        // 2️⃣ 지난 7일간 user_action_log 조회
+        // 2️⃣ 지난 7일간 AI 행동 로그 가져오기
         const [logRows] = await conn.query(
             `SELECT action_type, DATE(detected_at) AS date_only, DAYOFWEEK(detected_at) AS day_num
              FROM user_action_log
              WHERE user_id = ?
-             AND detected_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+               AND detected_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
              ORDER BY detected_at ASC`,
             [user_id]
         );
 
-        const dayMap = ['일', '월', '화', '수', '목', '금', '토'];
+        // 3️⃣ 요일 매핑 (MySQL DAYOFWEEK: 1=일요일 ~ 7=토요일)
+        const dayMap = {
+            1: '일',  // Sunday
+            2: '월',
+            3: '화',
+            4: '수',
+            5: '목',
+            6: '금',
+            7: '토',
+        };
+
         const successByDay = { '월': 0, '화': 0, '수': 0, '목': 0, '금': 0, '토': 0, '일': 0 };
         const totalActionsByDay = { '월': 0, '화': 0, '수': 0, '목': 0, '금': 0, '토': 0, '일': 0 };
 
-        // 3️⃣ AI 인식 행동이 미션과 매칭되는지 체크
+        // 4️⃣ AI 행동 중 미션과 일치한 것 계산
         for (const log of logRows) {
-            const day = dayMap[log.day_num % 7];
+            const day = dayMap[log.day_num]; // << 수정됨 (정확한 매핑)
 
             totalActionsByDay[day] += 1;
 
@@ -52,7 +59,7 @@ router.get('/weekly', async (req, res) => {
             }
         }
 
-        // 4️⃣ 성공률 계산
+        // 5️⃣ 성공률 계산
         const rateByDay = {};
         let sum = 0;
         let cnt = 0;
@@ -61,26 +68,31 @@ router.get('/weekly', async (req, res) => {
             const total = totalActionsByDay[day];
             const success = successByDay[day];
 
+            // 성공률 = (성공 / 전체) × 100
             const rate = total > 0 ? Math.round((success / total) * 100) : 0;
+
             rateByDay[day] = rate;
 
             sum += rate;
             cnt += 1;
         }
 
-        const weeklyAverage = (sum / cnt).toFixed(1);
+        const weeklyAverage = cnt > 0 ? (sum / cnt).toFixed(1) : "0.0";
+
         const bestDay = Object.entries(rateByDay).sort((a, b) => b[1] - a[1])[0][0];
 
         conn.release();
 
-        res.json({
+        return res.json({
             successByDay: rateByDay,
             weeklyAverage,
             bestDay
         });
 
     } catch (error) {
-        console.error(error);
+        console.error("📌 Weekly Report Error:", error);
         res.status(500).json({ message: '서버 에러' });
     }
 });
+
+module.exports = router;

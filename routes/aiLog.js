@@ -1,5 +1,5 @@
 const express = require("express");
-const db = require("../config/db");
+const db = require("../db");     // ✅ 수정됨!
 const dayjs = require("dayjs");
 
 const router = express.Router();
@@ -15,7 +15,7 @@ router.post("/", async (req, res) => {
 
     await db.query(
       "INSERT INTO user_action_log (user_id, action_type) VALUES (?, ?)",
-      [user_id, action_code]   // action_code를 action_type에 저장
+      [user_id, action_code]
     );
 
     res.json({ message: "AI log saved!" });

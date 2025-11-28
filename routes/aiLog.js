@@ -1,5 +1,7 @@
+// routes/aiLog.js
+
 const express = require("express");
-const db = require("../db");     // ✅ 수정됨!
+const db = require("../db");        // 🔥 여기가 핵심. 경로는 이게 맞음!
 const dayjs = require("dayjs");
 
 const router = express.Router();

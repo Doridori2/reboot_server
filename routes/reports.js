@@ -1,6 +1,7 @@
 // routes/reports.js
 const express = require('express');
 const router = express.Router();  // ✅ 이 한 줄이 없어서 생긴 에러
+const rbpool = require('../db'); 
 
 /// GET /reports/weekly?user_id=xxx
 router.get('/weekly', async (req, res) => {

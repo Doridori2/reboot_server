@@ -29,6 +29,11 @@ const ACTION_MAP = {
   C112: "춤을 춘다",
 };
 
+// 🧹 mission_description에서 이모지 제거
+function removeEmoji(text) {
+    return text.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "").trim();
+}
+
 router.get('/weekly', async (req, res) => {
     const { user_id } = req.query;
 
@@ -39,13 +44,15 @@ router.get('/weekly', async (req, res) => {
     try {
         const conn = await rbpool.getConnection();
 
-        // 1️⃣ 유저 미션 목록
+        // 1️⃣ 유저 미션 목록 (이모지 제거!)
         const [missionRows] = await conn.query(
             `SELECT mission_description FROM missions WHERE user_id = ?`,
             [user_id]
         );
 
-        const selectedMissions = missionRows.map(m => m.mission_description);
+        const selectedMissions = missionRows.map(m =>
+            removeEmoji(m.mission_description)
+        );
 
         // 2️⃣ 지난 7일 행동 로그
         const [logRows] = await conn.query(
@@ -112,4 +119,3 @@ router.get('/weekly', async (req, res) => {
 });
 
 module.exports = router;
-r;

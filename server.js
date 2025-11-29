@@ -6,7 +6,7 @@ const morgan = require('morgan');
 require('dotenv').config(); 
 const rbapp = express(); //app 객체 생성
 const PORT = process.env.PORT || 3000; // 서버가 열릴 주소의 번호 (localhost:3000)
-const aiLogsRoute = require('./routes/aiLog');
+
 
 
 rbapp.use(cors({ origin: true }));   //미들웨어가 라우터보다 앞에 있어야함
@@ -48,6 +48,7 @@ rbapp.use('/emotion-diary', emotionRoutes);
 
 rbapp.get('/health', (_, res) => res.json({ ok: true })); //헬스체크 라우트 미리 추가
 
+const aiLogsRoute = require('./routes/aiLog');
 rbapp.use('/ai-log', aiLogsRoute);
 
 

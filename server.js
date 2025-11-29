@@ -1,5 +1,7 @@
 // server.js
 
+console.log("🟢 server.js 실행됨");
+
 const express = require('express'); //express라는 프레임워크를 불러옴 -> 서버를 빠르게 만들 수 있게 도와주는 라이브러리
 const cors = require('cors');
 const morgan = require('morgan');             

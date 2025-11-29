@@ -4,6 +4,8 @@ const express = require("express");
 const router = express.Router();
 const rbpool = require("../db");
 
+console.log("🟢 aiLog.js 라우터 로드됨!");
+
 // 🟦 AI 행동 로그 저장 API
 router.post("/", async (req, res) => {
   try {

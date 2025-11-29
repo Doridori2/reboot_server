@@ -13,6 +13,7 @@ rbapp.use(cors({ origin: true }));   //미들웨어가 라우터보다 앞에 �
 
 const usersRouter = require('./routes/users'); // users 라우터 파일을 불러옵니다.
 rbapp.use(express.json()); //클라이언트에서 서버로 데이터를 보낼 때 JSON 형식. 이걸 자동을 읽어줄 수 있게 설정
+rbapp.use(express.urlencoded({ extended: true }));
 rbapp.use('/users', usersRouter); // /users 경로에서 users.js의 라우터 사용
 rbapp.use(morgan('dev'));
 

@@ -4,14 +4,11 @@ const express = require("express");
 const router = express.Router();
 const rbpool = require("../db");
 
-router.post("/", (req, res, next) => {
-  console.log("🔥 AI 서버가 보낸 데이터:", req.body);
-  next();
-});
-
 // 🟦 AI 행동 로그 저장 API
 router.post("/", async (req, res) => {
   try {
+    console.log("🔥 AI 서버가 보낸 데이터:", req.body);
+
     const { user_id, action_type } = req.body;
 
     if (!user_id || !action_type) {

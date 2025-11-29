@@ -4,18 +4,19 @@ const express = require('express'); //express라는 프레임워크를 불러옴
 const cors = require('cors');
 const morgan = require('morgan');             
 require('dotenv').config(); 
+
 const rbapp = express(); //app 객체 생성
 const PORT = process.env.PORT || 3000; // 서버가 열릴 주소의 번호 (localhost:3000)
 
+rbapp.use(cors({ origin: true }));
+rbapp.use(express.json());
+rbapp.use(express.urlencoded({ extended: true }));
+rbapp.use(morgan('dev'));
 
-
-rbapp.use(cors({ origin: true }));   //미들웨어가 라우터보다 앞에 있어야함
 
 const usersRouter = require('./routes/users'); // users 라우터 파일을 불러옵니다.
-rbapp.use(express.json()); //클라이언트에서 서버로 데이터를 보낼 때 JSON 형식. 이걸 자동을 읽어줄 수 있게 설정
-rbapp.use(express.urlencoded({ extended: true }));
 rbapp.use('/users', usersRouter); // /users 경로에서 users.js의 라우터 사용
-rbapp.use(morgan('dev'));
+
 
 const authRouter = require('./routes/auth'); // auth 라우터 파일을 불러옵니다.
 rbapp.use('/auth', authRouter); // /auth 경로에서 auth.js의 라우터 사용

@@ -46,7 +46,10 @@ router.get('/weekly', async (req, res) => {
 
         // 1️⃣ 유저 미션 목록 (이모지 제거!)
         const [missionRows] = await conn.query(
-            `SELECT mission_description FROM missions WHERE user_id = ?`,
+            `SELECT mission_description 
+                FROM missions 
+                WHERE user_id = ? 
+                AND DATE(created_at) = CURDATE();`,
             [user_id]
         );
 

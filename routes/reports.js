@@ -1,3 +1,5 @@
+// routes/reports.js
+
 const express = require('express');
 const router = express.Router();
 const rbpool = require('../db');
@@ -41,7 +43,7 @@ router.get('/weekly', async (req, res) => {
   try {
     const conn = await rbpool.getConnection();
 
-    // ✨ 1) 오늘 선택한 미션 목록 가져오기
+    // 1️⃣ 오늘 선택한 미션 목록 가져오기 (중복 없이)
     const [missionRows] = await conn.query(
       `SELECT mission_description
        FROM missions
@@ -51,10 +53,9 @@ router.get('/weekly', async (req, res) => {
     );
 
     const todayMissionList = missionRows.map(m => removeEmoji(m.mission_description));
-
     const missionCount = todayMissionList.length;
 
-    // ✨ 2) 지난 7일간 AI 행동 로그
+    // 2️⃣ 지난 7일간 AI 행동 로그 가져오기
     const [logRows] = await conn.query(
       `SELECT action_type, detected_at, DAYOFWEEK(detected_at) AS day_num
        FROM user_action_log
@@ -65,35 +66,47 @@ router.get('/weekly', async (req, res) => {
     );
 
     const dayMap = { 1: '일', 2: '월', 3: '화', 4: '수', 5: '목', 6: '금', 7: '토' };
-    const successByDay = { '월': 0, '화': 0, '수': 0, '목': 0, '금': 0, '토': 0, '일': 0 };
 
-    // ✨ 3) 행동 로그를 미션과 매칭
+    // 3️⃣ 요일별로 "성공한 미션 종류"만 카운트하기 위해 Set 사용
+    const successSets = {
+      '월': new Set(),
+      '화': new Set(),
+      '수': new Set(),
+      '목': new Set(),
+      '금': new Set(),
+      '토': new Set(),
+      '일': new Set()
+    };
+
+    // 4️⃣ 행동 로그를 미션과 매칭
     for (const log of logRows) {
-      const mappedAction = ACTION_MAP[log.action_type];
-      const day = dayMap[log.day_num];
+      const mappedAction = ACTION_MAP[log.action_type];   // 행동 텍스트
+      const day = dayMap[log.day_num];                    // 요일
 
+      // 미션에 포함된 행동이고, 중복 없이 기록
       if (todayMissionList.includes(mappedAction)) {
-        successByDay[day] += 1;
+        successSets[day].add(mappedAction);
       }
     }
 
-    // ✨ 4) 요일별 성공률 계산
+    // 5️⃣ 요일별 성공률 계산 (중복 제거된 Set 기준)
     const rateByDay = {};
     let totalRate = 0;
 
-    for (const day of Object.keys(successByDay)) {
-      const success = successByDay[day];
+    for (const day of Object.keys(successSets)) {
+      const successCount = successSets[day].size;  // 해당 요일 성공한 미션 종류 수
 
       const rate =
-        missionCount > 0 ? Math.round((success / missionCount) * 100) : 0;
+        missionCount > 0 ? Math.round((successCount / missionCount) * 100) : 0;
 
       rateByDay[day] = rate;
       totalRate += rate;
     }
 
+    // 6️⃣ 주간 평균
     const weeklyAverage = (totalRate / 7).toFixed(1);
 
-    // ✨ 5) 최고 수행 요일 계산
+    // 7️⃣ 최고 성과 요일
     const bestDay = Object.entries(rateByDay).sort((a, b) => b[1] - a[1])[0][0];
 
     conn.release();

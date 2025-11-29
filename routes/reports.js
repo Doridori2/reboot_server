@@ -30,7 +30,6 @@ const ACTION_MAP = {
   C112: "춤을 춘다",
 };
 
-// 이모지 제거
 function removeEmoji(str) {
   return str.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "").trim();
 }
@@ -43,7 +42,7 @@ router.get('/weekly', async (req, res) => {
   try {
     const conn = await rbpool.getConnection();
 
-    // 1️⃣ 오늘 선택한 미션 목록 가져오기 (중복 없이)
+    // 1) 오늘 미션 목록
     const [missionRows] = await conn.query(
       `SELECT mission_description
        FROM missions
@@ -52,22 +51,21 @@ router.get('/weekly', async (req, res) => {
       [user_id]
     );
 
-    const todayMissionList = missionRows.map(m => removeEmoji(m.mission_description));
-    const missionCount = todayMissionList.length;
+    const todayMissions = missionRows.map(m => removeEmoji(m.mission_description));
+    const missionCount = todayMissions.length;
 
-    // 2️⃣ 지난 7일간 AI 행동 로그 가져오기
+    // 2) 지난 7일 행동 로그
     const [logRows] = await conn.query(
       `SELECT action_type, detected_at, DAYOFWEEK(detected_at) AS day_num
        FROM user_action_log
        WHERE user_id = ?
-       AND detected_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
-       ORDER BY detected_at`,
+       AND detected_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)`,
       [user_id]
     );
 
     const dayMap = { 1: '일', 2: '월', 3: '화', 4: '수', 5: '목', 6: '금', 7: '토' };
 
-    // 3️⃣ 요일별로 "성공한 미션 종류"만 카운트하기 위해 Set 사용
+    // 3) 요일별로 중복 없는 성공 미션 저장
     const successSets = {
       '월': new Set(),
       '화': new Set(),
@@ -75,44 +73,39 @@ router.get('/weekly', async (req, res) => {
       '목': new Set(),
       '금': new Set(),
       '토': new Set(),
-      '일': new Set()
+      '일': new Set(),
     };
 
-    // 4️⃣ 행동 로그를 미션과 매칭
     for (const log of logRows) {
-      const mappedAction = ACTION_MAP[log.action_type];   // 행동 텍스트
-      const day = dayMap[log.day_num];                    // 요일
+      const action = ACTION_MAP[log.action_type];
+      const day = dayMap[log.day_num];
 
-      // 미션에 포함된 행동이고, 중복 없이 기록
-      if (todayMissionList.includes(mappedAction)) {
-        successSets[day].add(mappedAction);
+      if (todayMissions.includes(action)) {
+        successSets[day].add(action);  // 중복 제거됨!
       }
     }
 
-    // 5️⃣ 요일별 성공률 계산 (중복 제거된 Set 기준)
-    const rateByDay = {};
-    let totalRate = 0;
+    // 4) 성공률 계산
+    const successByDay = {};
+    let total = 0;
 
     for (const day of Object.keys(successSets)) {
-      const successCount = successSets[day].size;  // 해당 요일 성공한 미션 종류 수
+      const successCount = successSets[day].size;
+      const rate = missionCount > 0 ? Math.round((successCount / missionCount) * 100) : 0;
 
-      const rate =
-        missionCount > 0 ? Math.round((successCount / missionCount) * 100) : 0;
-
-      rateByDay[day] = rate;
-      totalRate += rate;
+      successByDay[day] = rate;
+      total += rate;
     }
 
-    // 6️⃣ 주간 평균
-    const weeklyAverage = (totalRate / 7).toFixed(1);
+    const weeklyAverage = (total / 7).toFixed(1);
 
-    // 7️⃣ 최고 성과 요일
-    const bestDay = Object.entries(rateByDay).sort((a, b) => b[1] - a[1])[0][0];
+    // 5) 최고 요일
+    const bestDay = Object.entries(successByDay)
+      .sort((a, b) => b[1] - a[1])[0][0];
 
     conn.release();
-
     res.json({
-      successByDay: rateByDay,
+      successByDay,
       weeklyAverage,
       bestDay
     });

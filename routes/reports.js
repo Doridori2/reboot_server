@@ -90,8 +90,13 @@ router.get("/weekly", async (req, res) => {
     const weeklyAverage = (totalRate / 7).toFixed(1);
     const bestDay = Object.entries(successByDay).sort((a, b) => b[1] - a[1])[0][0];
 
-    conn.release();
-    res.json({ successByDay, weeklyAverage, bestDay });
+    
+res.json({
+      successByDay,
+      weeklyAverage,
+      bestDay,
+      recommendedMissions: trimmed
+    });
 
   } catch (err) {
     console.error(err);

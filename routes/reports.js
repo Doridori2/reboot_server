@@ -33,6 +33,8 @@ function clean(str) {
   return str.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "").trim();
 }
 
+
+
 router.get("/weekly", async (req, res) => {
   const { user_id } = req.query;
   if (!user_id) return res.status(400).json({ message: "user_id required" });
@@ -144,6 +146,34 @@ router.get("/weekly", async (req, res) => {
     console.error(err);
     res.status(500).json({ message: "server error" });
   }
+
+  router.get("/streak/:user_id", async (req, res) => {
+  const { user_id } = req.params;
+
+  const [rows] = await db.query(
+    `SELECT date FROM mission_success_log 
+     WHERE user_id = ?
+     ORDER BY date DESC`,
+    [user_id]
+  );
+
+  let streak = 0;
+  let currentDate = new Date();
+
+  for (let i = 0; i < rows.length; i++) {
+    const rowDate = new Date(rows[i].date);
+    const diff = (currentDate - rowDate) / (1000 * 60 * 60 * 24);
+
+    if (diff === 0 || diff === 1) {
+      streak++;
+      currentDate = rowDate;
+    } else {
+      break;
+    }
+  }
+
+  res.json({ streak });
+});
 });
 
 module.exports = router;

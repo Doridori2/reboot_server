@@ -1,10 +1,9 @@
 // routes/reports.js
 
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const rbpool = require('../db');
+const rbpool = require("../db");
 
-// 행동 텍스트 매핑
 const ACTION_MAP = {
   C001: "음식을 먹는다",
   C002: "음료를 마신다",
@@ -30,89 +29,73 @@ const ACTION_MAP = {
   C112: "춤을 춘다",
 };
 
-function removeEmoji(str) {
+function clean(str) {
   return str.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "").trim();
 }
 
-router.get('/weekly', async (req, res) => {
+router.get("/weekly", async (req, res) => {
   const { user_id } = req.query;
-
-  if (!user_id) return res.status(400).json({ message: "user_id 필요" });
+  if (!user_id) return res.status(400).json({ message: "user_id required" });
 
   try {
     const conn = await rbpool.getConnection();
 
-    // 1) 오늘 미션 목록
-    const [missionRows] = await conn.query(
-      `SELECT mission_description
-       FROM missions
-       WHERE user_id = ?
-       AND DATE(created_at) = CURDATE()`,
-      [user_id]
-    );
+    const successByDay = { 월: 0, 화: 0, 수: 0, 목: 0, 금: 0, 토: 0, 일: 0 };
+    const dayMap = { 1: "일", 2: "월", 3: "화", 4: "수", 5: "목", 6: "금", 7: "토" };
 
-    const todayMissions = missionRows.map(m => removeEmoji(m.mission_description));
-    const missionCount = todayMissions.length;
+    let totalRate = 0;
 
-    // 2) 지난 7일 행동 로그
-    const [logRows] = await conn.query(
-      `SELECT action_type, detected_at, DAYOFWEEK(detected_at) AS day_num
-       FROM user_action_log
-       WHERE user_id = ?
-       AND detected_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)`,
-      [user_id]
-    );
+    // 지난 7일 loop
+    for (let i = 0; i < 7; i++) {
+      const [dateRow] = await conn.query(
+        `SELECT CURDATE() - INTERVAL ? DAY AS date`,
+        [i]
+      );
+      const dateStr = dateRow[0].date;
 
-    const dayMap = { 1: '일', 2: '월', 3: '화', 4: '수', 5: '목', 6: '금', 7: '토' };
+      const [missionRows] = await conn.query(
+        `SELECT mission_description FROM missions
+         WHERE user_id = ? AND created_at = ?`,
+        [user_id, dateStr]
+      );
 
-    // 3) 요일별로 중복 없는 성공 미션 저장
-    const successSets = {
-      '월': new Set(),
-      '화': new Set(),
-      '수': new Set(),
-      '목': new Set(),
-      '금': new Set(),
-      '토': new Set(),
-      '일': new Set(),
-    };
+      const missions = missionRows.map(m => clean(m.mission_description));
+      const missionCount = missions.length;
 
-    for (const log of logRows) {
-      const action = ACTION_MAP[log.action_type];
-      const day = dayMap[log.day_num];
+      const [logRows] = await conn.query(
+        `SELECT action_type, DAYOFWEEK(detected_at) AS day_num
+         FROM user_action_log
+         WHERE user_id = ?
+         AND DATE(detected_at) = ?`,
+        [user_id, dateStr]
+      );
 
-      if (todayMissions.includes(action)) {
-        successSets[day].add(action);  // 중복 제거됨!
+      const successSet = new Set();
+
+      for (const log of logRows) {
+        const action = ACTION_MAP[log.action_type];
+        if (missions.includes(action)) {
+          successSet.add(action);
+        }
       }
-    }
 
-    // 4) 성공률 계산
-    const successByDay = {};
-    let total = 0;
-
-    for (const day of Object.keys(successSets)) {
-      const successCount = successSets[day].size;
+      const successCount = successSet.size;
       const rate = missionCount > 0 ? Math.round((successCount / missionCount) * 100) : 0;
 
-      successByDay[day] = rate;
-      total += rate;
+      const dayName = dayMap[(new Date(dateStr).getDay() + 1)];
+      successByDay[dayName] = rate;
+      totalRate += rate;
     }
 
-    const weeklyAverage = (total / 7).toFixed(1);
-
-    // 5) 최고 요일
-    const bestDay = Object.entries(successByDay)
-      .sort((a, b) => b[1] - a[1])[0][0];
+    const weeklyAverage = (totalRate / 7).toFixed(1);
+    const bestDay = Object.entries(successByDay).sort((a, b) => b[1] - a[1])[0][0];
 
     conn.release();
-    res.json({
-      successByDay,
-      weeklyAverage,
-      bestDay
-    });
+    res.json({ successByDay, weeklyAverage, bestDay });
 
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "서버 에러" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "server error" });
   }
 });
 

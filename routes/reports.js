@@ -20,7 +20,7 @@ const ACTION_MAP = {
   C069: "전화통화를 하다",
   C073: "컴퓨터를 한다",
   C074: "휴대폰을 조작한다",
-  C079: "청소를 하다",
+  C079: "청소를 한다",
   C084: "기타를 친다",
   C090: "반려동물과 논다",
   C093: "식물에 물을 준다",
@@ -33,8 +33,9 @@ function clean(str) {
   return str.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "").trim();
 }
 
-
-
+/* ---------------------------------
+   📌 주간 리포트 (/weekly)
+----------------------------------*/
 router.get("/weekly", async (req, res) => {
   const { user_id } = req.query;
   if (!user_id) return res.status(400).json({ message: "user_id required" });
@@ -47,7 +48,6 @@ router.get("/weekly", async (req, res) => {
 
     let totalRate = 0;
 
-    // 지난 7일 loop
     for (let i = 0; i < 7; i++) {
       const [dateRow] = await conn.query(
         `SELECT CURDATE() - INTERVAL ? DAY AS date`,
@@ -92,8 +92,7 @@ router.get("/weekly", async (req, res) => {
     const weeklyAverage = (totalRate / 7).toFixed(1);
     const bestDay = Object.entries(successByDay).sort((a, b) => b[1] - a[1])[0][0];
 
-    /* ⭐⭐⭐ 추천 미션 생성 구역 ⭐⭐⭐ */
-
+    /* ⭐ 추천 미션 */
     const recommendedMissions = [];
 
     const [allLogs] = await conn.query(
@@ -131,49 +130,55 @@ router.get("/weekly", async (req, res) => {
       });
     }
 
-    const trimmed = recommendedMissions.slice(0, 3);
-
     conn.release();
 
     res.json({
       successByDay,
       weeklyAverage,
       bestDay,
-      recommendedMissions: trimmed
+      recommendedMissions: recommendedMissions.slice(0, 3)
     });
 
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "server error" });
   }
+});
 
-  router.get("/streak/:user_id", async (req, res) => {
+/* ---------------------------------
+   📌 연속 성공일 Streak (/streak/:user_id)
+----------------------------------*/
+router.get("/streak/:user_id", async (req, res) => {
   const { user_id } = req.params;
 
-  const [rows] = await db.query(
-    `SELECT date FROM mission_success_log 
-     WHERE user_id = ?
-     ORDER BY date DESC`,
-    [user_id]
-  );
+  try {
+    const [rows] = await rbpool.query(
+      `SELECT date FROM mission_success_log 
+       WHERE user_id = ?
+       ORDER BY date DESC`,
+      [user_id]
+    );
 
-  let streak = 0;
-  let currentDate = new Date();
+    let streak = 0;
+    let currentDate = new Date();
 
-  for (let i = 0; i < rows.length; i++) {
-    const rowDate = new Date(rows[i].date);
-    const diff = (currentDate - rowDate) / (1000 * 60 * 60 * 24);
+    for (let i = 0; i < rows.length; i++) {
+      const rowDate = new Date(rows[i].date);
+      const diff = (currentDate - rowDate) / (1000 * 60 * 60 * 24);
 
-    if (diff === 0 || diff === 1) {
-      streak++;
-      currentDate = rowDate;
-    } else {
-      break;
+      if (diff === 0 || diff === 1) {
+        streak++;
+        currentDate = rowDate;
+      } else {
+        break;
+      }
     }
-  }
 
-  res.json({ streak });
-});
+    res.json({ streak });
+  } catch (err) {
+    console.error("❌ Streak 오류:", err);
+    res.status(500).json({ error: "streak 조회 중 오류 발생" });
+  }
 });
 
 module.exports = router;

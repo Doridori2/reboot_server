@@ -60,8 +60,9 @@ router.get("/weekly", async (req, res) => {
       /* 📌 오늘의 미션 */
       const [missionRows] = await conn.query(
         `SELECT mission_description
-         FROM missions
-         WHERE user_id = ? AND created_at = ?`,
+        FROM missions
+        WHERE user_id = ?
+        AND DATE(created_at) = ?`,
         [user_id, date]
       );
 

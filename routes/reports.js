@@ -49,7 +49,6 @@ router.get("/weekly", async (req, res) => {
 
     let totalRate = 0;
 
-    // 🔁 오늘 포함 최근 7일
     for (let i = 0; i < 7; i++) {
       const [[{ date }]] = await conn.query(
         `SELECT CURDATE() - INTERVAL ? DAY AS date`,
@@ -59,49 +58,38 @@ router.get("/weekly", async (req, res) => {
       const dateStr = String(date);
       const dayName = dayKor[new Date(dateStr).getDay()];
 
-      // 1️⃣ 그날의 미션
-      const [missionRows] = await conn.query(
-        `SELECT mission_description
+      // ✅ 그날 생성된 전체 미션 수
+      const [[{ total }]] = await conn.query(
+        `SELECT COUNT(*) AS total
          FROM missions
          WHERE user_id = ?
-         AND DATE(created_at) = ?`,
+         AND created_at = ?`,
         [user_id, dateStr]
       );
 
-      const missions = missionRows.map(m => clean(m.mission_description));
-      const missionCount = missions.length;
-
-      if (missionCount === 0) {
+      if (total === 0) {
         successByDay[dayName] = 0;
         continue;
       }
 
-      // 2️⃣ 그날의 AI 로그
-      const [logRows] = await conn.query(
-        `SELECT action_type
-         FROM user_action_log
+      // ✅ 그날 완료된 미션 수
+      const [[{ completed }]] = await conn.query(
+        `SELECT COUNT(*) AS completed
+         FROM missions
          WHERE user_id = ?
-         AND DATE(detected_at) = ?`,
+         AND created_at = ?
+         AND status = 'completed'`,
         [user_id, dateStr]
       );
 
-      const successSet = new Set();
-
-      for (const log of logRows) {
-        const actionLabel = ACTION_MAP[log.action_type];
-        if (missions.includes(actionLabel)) {
-          successSet.add(actionLabel);
-        }
-      }
-
-      const rate = Math.round((successSet.size / missionCount) * 100);
+      const rate = Math.round((completed / total) * 100);
       successByDay[dayName] = rate;
       totalRate += rate;
 
       console.log(
         `[weekly] ${dateStr} (${dayName})`,
-        `missions=${missionCount}`,
-        `success=${successSet.size}`,
+        `total=${total}`,
+        `completed=${completed}`,
         `rate=${rate}`
       );
     }
@@ -125,5 +113,6 @@ router.get("/weekly", async (req, res) => {
     res.status(500).json({ message: "server error" });
   }
 });
+
 
 module.exports = router;

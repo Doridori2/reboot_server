@@ -119,8 +119,7 @@ router.get("/weekly", async (req, res) => {
 
 
     const weeklyAverage =
-      validDays > 0 ? (totalRate / validDays).toFixed(1) : 0;
-
+  validDays > 0 ? Number((totalRate / validDays).toFixed(1)) : 0;
     const bestDay = Object.entries(successByDay)
       .sort((a, b) => b[1] - a[1])[0][0];
 

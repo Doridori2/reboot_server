@@ -51,63 +51,63 @@ router.get("/weekly", async (req, res) => {
     let validDays = 0;
 
     for (let i = 0; i < 7; i++) {
-      /* 📅 기준 날짜 (DB 기준) */
-      const [[{ date }]] = await conn.query(
-        `SELECT CURDATE() - INTERVAL ? DAY AS date`,
-        [i]
-      );
+  // 📅 기준 날짜
+  const [dateRows] = await conn.query(
+    `SELECT CURDATE() - INTERVAL ? DAY AS date`,
+    [i]
+  );
+  const date = dateRows[0].date;
 
-      /* 📌 오늘의 미션 */
-      const [missionRows] = await conn.query(
-        `SELECT mission_description
-        FROM missions
-        WHERE user_id = ?
-        AND created_at = ?`,
-        [user_id, date]
-      );
+  // 📌 오늘의 미션
+  const [missionRows] = await conn.query(
+    `SELECT mission_description
+     FROM missions
+     WHERE user_id = ?
+     AND created_at = ?`,
+    [user_id, date]
+  );
 
-      const missions = missionRows.map(m => clean(m.mission_description));
-      const missionCount = missions.length;
+  const missions = missionRows.map(m => clean(m.mission_description));
+  const missionCount = missions.length;
 
-      /* 📌 오늘의 행동 로그 */
-      const [logRows] = await conn.query(
-        `SELECT action_type
-        FROM user_action_log
-        WHERE user_id = ?
-        AND detected_at >= ?
-        AND detected_at < DATE_ADD(?, INTERVAL 1 DAY)`,
-        [user_id, date, date]
-);
+  // 📌 오늘의 행동 로그
+  const [logRows] = await conn.query(
+    `SELECT action_type
+     FROM user_action_log
+     WHERE user_id = ?
+     AND detected_at >= ?
+     AND detected_at < DATE_ADD(?, INTERVAL 1 DAY)`,
+    [user_id, date, date]
+  );
 
-      const successSet = new Set();
-
-      for (const log of logRows) {
-        const action = ACTION_MAP[log.action_type];
-        if (missions.includes(action)) {
-          successSet.add(action);
-        }
-      }
-
-      const successCount = successSet.size;
-      const rate =
-        missionCount > 0
-          ? Math.round((successCount / missionCount) * 100)
-          : 0;
-
-      /* 📌 요일 계산 (MySQL 기준, 절대 JS Date 쓰지 않음) */
-      const [[{ day_num }]] = await conn.query(
-        `SELECT DAYOFWEEK(?) AS day_num`,
-        [date]
-      );
-
-      const dayName = dayMap[day_num];
-      successByDay[dayName] = rate;
-
-      if (missionCount > 0) {
-        totalRate += rate;
-        validDays++;
-      }
+  const successSet = new Set();
+  for (const log of logRows) {
+    const action = clean(ACTION_MAP[log.action_type] || "");
+    if (missions.includes(action)) {
+      successSet.add(action);
     }
+  }
+
+  const successCount = successSet.size;
+  const rate =
+    missionCount > 0
+      ? Math.round((successCount / missionCount) * 100)
+      : 0;
+
+  // 📌 요일 계산 (MySQL 기준)
+  const [dayRows] = await conn.query(
+    `SELECT DAYOFWEEK(?) AS day_num`,
+    [date]
+  );
+
+  const dayName = dayMap[dayRows[0].day_num];
+  successByDay[dayName] = rate;
+
+  if (missionCount > 0) {
+    totalRate += rate;
+    validDays++;
+  }
+}
 
     const weeklyAverage =
       validDays > 0 ? (totalRate / validDays).toFixed(1) : 0;

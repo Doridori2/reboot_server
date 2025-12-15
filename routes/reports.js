@@ -62,7 +62,7 @@ router.get("/weekly", async (req, res) => {
         `SELECT mission_description
         FROM missions
         WHERE user_id = ?
-        AND DATE(created_at) = ?`,
+        AND created_at = ?`,
         [user_id, date]
       );
 
@@ -72,11 +72,12 @@ router.get("/weekly", async (req, res) => {
       /* 📌 오늘의 행동 로그 */
       const [logRows] = await conn.query(
         `SELECT action_type
-         FROM user_action_log
-         WHERE user_id = ?
-         AND DATE(detected_at) = ?`,
-        [user_id, date]
-      );
+        FROM user_action_log
+        WHERE user_id = ?
+        AND detected_at >= ?
+        AND detected_at < DATE_ADD(?, INTERVAL 1 DAY)`,
+        [user_id, date, date]
+);
 
       const successSet = new Set();
 

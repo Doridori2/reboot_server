@@ -40,33 +40,38 @@ router.get("/weekly", async (req, res) => {
   const { user_id } = req.query;
   if (!user_id) return res.status(400).json({ message: "user_id required" });
 
+  let conn;
   try {
-    const conn = await rbpool.getConnection();
+    conn = await rbpool.getConnection();
 
     const successByDay = { 월: 0, 화: 0, 수: 0, 목: 0, 금: 0, 토: 0, 일: 0 };
-    const dayMap = { 1: "일", 2: "월", 3: "화", 4: "수", 5: "목", 6: "금", 7: "토" };
+    const daysKor = ["일", "월", "화", "수", "목", "금", "토"];
+
+    // ✅ 이번 주 월요일
+    const [[{ monday }]] = await conn.query(`
+      SELECT CURDATE() - INTERVAL (DAYOFWEEK(CURDATE()) - 2) DAY AS monday
+    `);
+
+    // ✅ 사용자 전체 미션 목록 (라벨 기준)
+    const [missionRows] = await conn.query(
+      `SELECT mission_description FROM missions WHERE user_id = ?`,
+      [user_id]
+    );
+    const allMissions = missionRows.map(m => clean(m.mission_description));
 
     let totalRate = 0;
 
+    // ✅ 월 ~ 일 순회
     for (let i = 0; i < 7; i++) {
-      const [dateRow] = await conn.query(
-        `SELECT CURDATE() - INTERVAL ? DAY AS date`,
-        [i]
-      );
-      const dateStr = dateRow[0].date;
+      const date = new Date(monday);
+      date.setDate(date.getDate() + i);
+      const dateStr = date.toISOString().slice(0, 10); // YYYY-MM-DD
 
-      const [missionRows] = await conn.query(
-        `SELECT mission_description FROM missions
-         WHERE user_id = ? AND created_at = ?`,
-        [user_id, dateStr]
-      );
+      const dayName = daysKor[date.getDay()];
 
-      const missions = missionRows.map(m => clean(m.mission_description));
-      const missionCount = missions.length;
-
+      // 그 날짜의 행동 로그
       const [logRows] = await conn.query(
-        `SELECT action_type, DAYOFWEEK(detected_at) AS day_num
-         FROM user_action_log
+        `SELECT action_type FROM user_action_log
          WHERE user_id = ?
          AND DATE(detected_at) = ?`,
         [user_id, dateStr]
@@ -75,16 +80,19 @@ router.get("/weekly", async (req, res) => {
       const successSet = new Set();
 
       for (const log of logRows) {
-        const action = ACTION_MAP[log.action_type];
-        if (missions.includes(action)) {
-          successSet.add(action);
+        const actionLabel = ACTION_MAP[log.action_type];
+        if (allMissions.includes(actionLabel)) {
+          successSet.add(actionLabel);
         }
       }
 
+      const missionCount = allMissions.length;
       const successCount = successSet.size;
-      const rate = missionCount > 0 ? Math.round((successCount / missionCount) * 100) : 0;
+      const rate =
+        missionCount > 0
+          ? Math.round((successCount / missionCount) * 100)
+          : 0;
 
-      const dayName = dayMap[(new Date(dateStr).getDay() + 1)];
       successByDay[dayName] = rate;
       totalRate += rate;
     }
@@ -92,92 +100,18 @@ router.get("/weekly", async (req, res) => {
     const weeklyAverage = (totalRate / 7).toFixed(1);
     const bestDay = Object.entries(successByDay).sort((a, b) => b[1] - a[1])[0][0];
 
-    /* ⭐ 추천 미션 */
-    const recommendedMissions = [];
-
-    const [allLogs] = await conn.query(
-      `SELECT action_type FROM user_action_log
-       WHERE user_id = ?
-       AND detected_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)`,
-      [user_id]
-    );
-
-    const phoneCount = allLogs.filter(l => l.action_type === "C074").length;
-    const cleaningCount = allLogs.filter(l => l.action_type === "C079").length;
-    const drinkCount = allLogs.filter(l => l.action_type === "C002").length;
-
-    if (phoneCount > 10) {
-      recommendedMissions.push({
-        icon: "🧘",
-        title: "목·어깨 스트레칭하기",
-        reason: "최근 휴대폰 사용이 많았어요!",
-      });
-    }
-
-    if (cleaningCount === 0) {
-      recommendedMissions.push({
-        icon: "🧹",
-        title: "책상 정리하기",
-        reason: "정리·정돈 행동이 거의 없었어요!",
-      });
-    }
-
-    if (drinkCount === 0) {
-      recommendedMissions.push({
-        icon: "🥤",
-        title: "물 한 잔 마시기",
-        reason: "수분 섭취가 부족했던 한 주였어요!",
-      });
-    }
-
     conn.release();
 
     res.json({
       successByDay,
       weeklyAverage,
       bestDay,
-      recommendedMissions: recommendedMissions.slice(0, 3)
+      recommendedMissions: [],
     });
-
   } catch (err) {
+    if (conn) conn.release();
     console.error(err);
     res.status(500).json({ message: "server error" });
-  }
-});
-
-/* ---------------------------------
-   📌 연속 성공일 Streak (/streak/:user_id)
-----------------------------------*/
-router.get("/streak/:user_id", async (req, res) => {
-  const { user_id } = req.params;
-
-  try {
-    const [rows] = await rbpool.query(
-      `SELECT date FROM mission_success_log 
-       WHERE user_id = ?
-       ORDER BY date DESC`,
-      [user_id]
-    );
-
-    let streak = 0;
-    let currentDate = new Date();
-
-    for (let i = 0; i < rows.length; i++) {
-      const rowDate = new Date(rows[i].date);
-      const diff = (currentDate - rowDate) / (1000 * 60 * 60 * 24);
-
-      if (diff === 0 || diff === 1) {
-        streak++;
-        currentDate = rowDate;
-      } else {
-        break;
-      }
-    }
-
-    res.json({ streak });
-  } catch (err) {
-    console.error("❌ Streak 오류:", err);
-    res.status(500).json({ error: "streak 조회 중 오류 발생" });
   }
 });
 

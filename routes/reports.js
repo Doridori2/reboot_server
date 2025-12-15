@@ -40,36 +40,41 @@ router.get("/weekly", async (req, res) => {
   const { user_id } = req.query;
   if (!user_id) return res.status(400).json({ message: "user_id required" });
 
+  let conn;
   try {
-    const conn = await rbpool.getConnection();
+    conn = await rbpool.getConnection();
 
     const successByDay = { 월: 0, 화: 0, 수: 0, 목: 0, 금: 0, 토: 0, 일: 0 };
     const dayMap = { 1: "일", 2: "월", 3: "화", 4: "수", 5: "목", 6: "금", 7: "토" };
 
     let totalRate = 0;
+    let validDays = 0;
 
     for (let i = 0; i < 7; i++) {
-      const [dateRow] = await conn.query(
+      /* 📅 기준 날짜 (DB 기준) */
+      const [[{ date }]] = await conn.query(
         `SELECT CURDATE() - INTERVAL ? DAY AS date`,
         [i]
       );
-      const dateStr = dateRow[0].date;
 
+      /* 📌 오늘의 미션 */
       const [missionRows] = await conn.query(
-        `SELECT mission_description FROM missions
+        `SELECT mission_description
+         FROM missions
          WHERE user_id = ? AND created_at = ?`,
-        [user_id, dateStr]
+        [user_id, date]
       );
 
       const missions = missionRows.map(m => clean(m.mission_description));
       const missionCount = missions.length;
 
+      /* 📌 오늘의 행동 로그 */
       const [logRows] = await conn.query(
-        `SELECT action_type, DAYOFWEEK(detected_at) AS day_num
+        `SELECT action_type
          FROM user_action_log
          WHERE user_id = ?
          AND DATE(detected_at) = ?`,
-        [user_id, dateStr]
+        [user_id, date]
       );
 
       const successSet = new Set();
@@ -82,21 +87,38 @@ router.get("/weekly", async (req, res) => {
       }
 
       const successCount = successSet.size;
-      const rate = missionCount > 0 ? Math.round((successCount / missionCount) * 100) : 0;
+      const rate =
+        missionCount > 0
+          ? Math.round((successCount / missionCount) * 100)
+          : 0;
 
-      const dayName = dayMap[(new Date(dateStr).getDay() + 1)];
+      /* 📌 요일 계산 (MySQL 기준, 절대 JS Date 쓰지 않음) */
+      const [[{ day_num }]] = await conn.query(
+        `SELECT DAYOFWEEK(?) AS day_num`,
+        [date]
+      );
+
+      const dayName = dayMap[day_num];
       successByDay[dayName] = rate;
-      totalRate += rate;
+
+      if (missionCount > 0) {
+        totalRate += rate;
+        validDays++;
+      }
     }
 
-    const weeklyAverage = (totalRate / 7).toFixed(1);
-    const bestDay = Object.entries(successByDay).sort((a, b) => b[1] - a[1])[0][0];
+    const weeklyAverage =
+      validDays > 0 ? (totalRate / validDays).toFixed(1) : 0;
+
+    const bestDay = Object.entries(successByDay)
+      .sort((a, b) => b[1] - a[1])[0][0];
 
     /* ⭐ 추천 미션 */
     const recommendedMissions = [];
 
     const [allLogs] = await conn.query(
-      `SELECT action_type FROM user_action_log
+      `SELECT action_type
+       FROM user_action_log
        WHERE user_id = ?
        AND detected_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)`,
       [user_id]
@@ -130,54 +152,18 @@ router.get("/weekly", async (req, res) => {
       });
     }
 
-    conn.release();
-
     res.json({
       successByDay,
       weeklyAverage,
       bestDay,
-      recommendedMissions: recommendedMissions.slice(0, 3)
+      recommendedMissions: recommendedMissions.slice(0, 3),
     });
 
   } catch (err) {
-    console.error(err);
+    console.error("❌ weekly report error:", err);
     res.status(500).json({ message: "server error" });
-  }
-});
-
-/* ---------------------------------
-   📌 연속 성공일 Streak (/streak/:user_id)
-----------------------------------*/
-router.get("/streak/:user_id", async (req, res) => {
-  const { user_id } = req.params;
-
-  try {
-    const [rows] = await rbpool.query(
-      `SELECT date FROM mission_success_log 
-       WHERE user_id = ?
-       ORDER BY date DESC`,
-      [user_id]
-    );
-
-    let streak = 0;
-    let currentDate = new Date();
-
-    for (let i = 0; i < rows.length; i++) {
-      const rowDate = new Date(rows[i].date);
-      const diff = (currentDate - rowDate) / (1000 * 60 * 60 * 24);
-
-      if (diff === 0 || diff === 1) {
-        streak++;
-        currentDate = rowDate;
-      } else {
-        break;
-      }
-    }
-
-    res.json({ streak });
-  } catch (err) {
-    console.error("❌ Streak 오류:", err);
-    res.status(500).json({ error: "streak 조회 중 오류 발생" });
+  } finally {
+    if (conn) conn.release();
   }
 });
 

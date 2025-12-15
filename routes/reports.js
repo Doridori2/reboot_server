@@ -45,33 +45,44 @@ router.get("/weekly", async (req, res) => {
     conn = await rbpool.getConnection();
 
     const successByDay = { 월: 0, 화: 0, 수: 0, 목: 0, 금: 0, 토: 0, 일: 0 };
-    const daysKor = ["일", "월", "화", "수", "목", "금", "토"];
+    const dayKor = ["일", "월", "화", "수", "목", "금", "토"];
 
-    // ✅ 이번 주 월요일
+    // 이번 주 월요일
     const [[{ monday }]] = await conn.query(`
       SELECT CURDATE() - INTERVAL (DAYOFWEEK(CURDATE()) - 2) DAY AS monday
     `);
 
-    // ✅ 사용자 전체 미션 목록 (라벨 기준)
-    const [missionRows] = await conn.query(
-      `SELECT mission_description FROM missions WHERE user_id = ?`,
-      [user_id]
-    );
-    const allMissions = missionRows.map(m => clean(m.mission_description));
-
     let totalRate = 0;
 
-    // ✅ 월 ~ 일 순회
+    // 월 ~ 일
     for (let i = 0; i < 7; i++) {
       const date = new Date(monday);
       date.setDate(date.getDate() + i);
       const dateStr = date.toISOString().slice(0, 10); // YYYY-MM-DD
+      const dayName = dayKor[date.getDay()];
 
-      const dayName = daysKor[date.getDay()];
+      // ✅ 1. 그날의 미션
+      const [missionRows] = await conn.query(
+        `SELECT mission_description
+         FROM missions
+         WHERE user_id = ?
+         AND DATE(created_at) = ?`,
+        [user_id, dateStr]
+      );
 
-      // 그 날짜의 행동 로그
+      const missions = missionRows.map(m => clean(m.mission_description));
+      const missionCount = missions.length;
+
+      // 미션이 없으면 성공률 0
+      if (missionCount === 0) {
+        successByDay[dayName] = 0;
+        continue;
+      }
+
+      // ✅ 2. 그날의 행동 로그
       const [logRows] = await conn.query(
-        `SELECT action_type FROM user_action_log
+        `SELECT action_type
+         FROM user_action_log
          WHERE user_id = ?
          AND DATE(detected_at) = ?`,
         [user_id, dateStr]
@@ -81,26 +92,24 @@ router.get("/weekly", async (req, res) => {
 
       for (const log of logRows) {
         const actionLabel = ACTION_MAP[log.action_type];
-        if (allMissions.includes(actionLabel)) {
+        if (missions.includes(actionLabel)) {
           successSet.add(actionLabel);
         }
       }
 
-      const missionCount = allMissions.length;
       const successCount = successSet.size;
-      const rate =
-        missionCount > 0
-          ? Math.round((successCount / missionCount) * 100)
-          : 0;
+      const rate = Math.round((successCount / missionCount) * 100);
 
       successByDay[dayName] = rate;
       totalRate += rate;
     }
 
     const weeklyAverage = (totalRate / 7).toFixed(1);
-    const bestDay = Object.entries(successByDay).sort((a, b) => b[1] - a[1])[0][0];
+    const bestDay = Object.entries(successByDay)
+      .sort((a, b) => b[1] - a[1])[0][0];
 
     conn.release();
+    console.log(dateStr, dayName, missionCount, successSet.size);
 
     res.json({
       successByDay,
@@ -108,6 +117,7 @@ router.get("/weekly", async (req, res) => {
       bestDay,
       recommendedMissions: [],
     });
+
   } catch (err) {
     if (conn) conn.release();
     console.error(err);

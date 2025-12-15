@@ -102,6 +102,7 @@ router.get("/weekly", async (req, res) => {
 
       successByDay[dayName] = rate;
       totalRate += rate;
+      console.log(dateStr, dayName, missionCount, successSet.size);
     }
 
     const weeklyAverage = (totalRate / 7).toFixed(1);
@@ -109,7 +110,7 @@ router.get("/weekly", async (req, res) => {
       .sort((a, b) => b[1] - a[1])[0][0];
 
     conn.release();
-    console.log(dateStr, dayName, missionCount, successSet.size);
+    
 
     res.json({
       successByDay,

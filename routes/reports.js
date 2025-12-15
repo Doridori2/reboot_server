@@ -51,6 +51,9 @@ router.get("/weekly", async (req, res) => {
     let validDays = 0;
 
     for (let i = 0; i < 7; i++) {
+      console.log("📅 date:", date);
+console.log("📌 missions:", missions);
+console.log("🎥 actions:", logRows.map(l => clean(ACTION_MAP[l.action_type])));
   // 📅 기준 날짜
   const [dateRows] = await conn.query(
     `SELECT CURDATE() - INTERVAL ? DAY AS date`,

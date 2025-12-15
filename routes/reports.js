@@ -103,3 +103,5 @@ router.get("/weekly", async (req, res) => {
     if (conn) conn.release();
   }
 });
+
+module.exports = router;

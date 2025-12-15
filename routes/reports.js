@@ -74,13 +74,55 @@ router.get("/weekly", async (req, res) => {
     const weeklyAverage = (totalRate / 7).toFixed(1);
     const bestDay = Object.entries(successByDay).sort((a, b) => b[1] - a[1])[0][0];
 
+        /* ⭐ 추천 미션 (최근 7일 AI 로그 기반) */
+    const recommendedMissions = [];
+
+    const [allLogs] = await conn.query(
+      `
+      SELECT action_type, detected_at
+      FROM user_action_log
+      WHERE user_id = ?
+        AND detected_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+      `,
+      [user_id]
+    );
+
+    const phoneCount = allLogs.filter(l => l.action_type === "C074").length;
+    const cleaningCount = allLogs.filter(l => l.action_type === "C079").length;
+    const drinkCount = allLogs.filter(l => l.action_type === "C002").length;
+
+    if (phoneCount > 10) {
+      recommendedMissions.push({
+        icon: "🧘",
+        title: "목·어깨 스트레칭하기",
+        reason: "최근 휴대폰 사용이 많았어요.",
+      });
+    }
+
+    if (cleaningCount === 0) {
+      recommendedMissions.push({
+        icon: "🧹",
+        title: "책상 정리하기",
+        reason: "정리·정돈 행동이 거의 없었어요.",
+      });
+    }
+
+    if (drinkCount === 0) {
+      recommendedMissions.push({
+        icon: "🥤",
+        title: "물 한 잔 마시기",
+        reason: "수분 섭취 기록이 거의 없었어요.",
+      });
+    }
+
+
     conn.release();
 
     return res.json({
       successByDay,
       weeklyAverage,
       bestDay,
-      recommendedMissions: [],
+      recommendedMissions: recommendedMissions.slice(0, 3),
     });
   } catch (err) {
     if (conn) conn.release();

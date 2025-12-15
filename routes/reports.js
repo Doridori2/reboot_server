@@ -56,7 +56,7 @@ router.get("/weekly", async (req, res) => {
         [i]
       );
 
-      const dateStr = date.toISOString().slice(0, 10);
+      const dateStr = String(date);
       const dayName = dayKor[new Date(dateStr).getDay()];
 
       // 1️⃣ 그날의 미션

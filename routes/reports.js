@@ -1,40 +1,10 @@
 // routes/reports.js
-
 const express = require("express");
 const router = express.Router();
 const rbpool = require("../db");
 
-const ACTION_MAP = {
-  C001: "음식을 먹는다",
-  C002: "음료를 마신다",
-  C007: "이를 닦는다",
-  C009: "손을 씻는다",
-  C028: "머리를 손질하다",
-  C033: "모자를 쓴다",
-  C035: "신발을 신는다",
-  C038: "쓰레기를 버린다",
-  C046: "공부하다",
-  C050: "카드게임을 하다",
-  C061: "그릇을 정리하다",
-  C063: "책(서류)를 본다",
-  C069: "전화통화를 하다",
-  C073: "컴퓨터를 한다",
-  C074: "휴대폰을 조작한다",
-  C079: "청소를 한다",
-  C084: "기타를 친다",
-  C090: "반려동물과 논다",
-  C093: "식물에 물을 준다",
-  C098: "스쿼트를 하다",
-  C101: "공놀이를 한다",
-  C112: "춤을 춘다",
-};
-
-function clean(str) {
-  return str.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "").trim();
-}
-
 /* ---------------------------------
-   📌 주간 리포트 (최근 7일 기준)
+   📌 주간 리포트 (최근 7일, missions 기준)
 ----------------------------------*/
 router.get("/weekly", async (req, res) => {
   const { user_id } = req.query;
@@ -44,75 +14,79 @@ router.get("/weekly", async (req, res) => {
   try {
     conn = await rbpool.getConnection();
 
+    // 1) 최근 7일 날짜 목록 (DB 기준) + 요일(0=월..6=일)까지 받아오기
+    const [days] = await conn.query(`
+      SELECT
+        d.dt AS date,
+        WEEKDAY(d.dt) AS wd
+      FROM (
+        SELECT CURDATE() AS dt
+        UNION ALL SELECT CURDATE() - INTERVAL 1 DAY
+        UNION ALL SELECT CURDATE() - INTERVAL 2 DAY
+        UNION ALL SELECT CURDATE() - INTERVAL 3 DAY
+        UNION ALL SELECT CURDATE() - INTERVAL 4 DAY
+        UNION ALL SELECT CURDATE() - INTERVAL 5 DAY
+        UNION ALL SELECT CURDATE() - INTERVAL 6 DAY
+      ) d
+    `);
+
+    // 2) 최근 7일 missions 집계 (created_at은 DATE 타입이라 이 방식이 가장 안전)
+    const [agg] = await conn.query(
+      `
+      SELECT
+        created_at AS date,
+        COUNT(*) AS total,
+        SUM(status = 'completed') AS completed
+      FROM missions
+      WHERE user_id = ?
+        AND created_at >= CURDATE() - INTERVAL 6 DAY
+      GROUP BY created_at
+      `,
+      [user_id]
+    );
+
+    // date -> {total, completed} 맵 만들기
+    const aggMap = new Map(
+      agg.map((r) => [
+        String(r.date), // 'YYYY-MM-DD' 형태로 들어오는 경우가 많음
+        { total: Number(r.total), completed: Number(r.completed) },
+      ])
+    );
+
+    const dayKorByWd = ["월", "화", "수", "목", "금", "토", "일"];
     const successByDay = { 월: 0, 화: 0, 수: 0, 목: 0, 금: 0, 토: 0, 일: 0 };
-    const dayKor = ["일", "월", "화", "수", "목", "금", "토"];
 
     let totalRate = 0;
 
-    for (let i = 0; i < 7; i++) {
-      const [[{ date }]] = await conn.query(
-        `SELECT CURDATE() - INTERVAL ? DAY AS date`,
-        [i]
-      );
+    for (const row of days) {
+      const dateStr = String(row.date);        // DB가 준 날짜 그대로
+      const dayName = dayKorByWd[row.wd];      // WEEKDAY: 0=월 ... 6=일
 
-      const dateStr = String(date);
-      const dayName = dayKor[new Date(dateStr).getDay()];
+      const info = aggMap.get(dateStr) || { total: 0, completed: 0 };
+      const rate = info.total > 0 ? Math.round((info.completed / info.total) * 100) : 0;
 
-      // ✅ 그날 생성된 전체 미션 수
-      const [[{ total }]] = await conn.query(
-        `SELECT COUNT(*) AS total
-         FROM missions
-         WHERE user_id = ?
-         AND created_at = ?`,
-        [user_id, dateStr]
-      );
-
-      if (total === 0) {
-        successByDay[dayName] = 0;
-        continue;
-      }
-
-      // ✅ 그날 완료된 미션 수
-      const [[{ completed }]] = await conn.query(
-        `SELECT COUNT(*) AS completed
-         FROM missions
-         WHERE user_id = ?
-         AND created_at = ?
-         AND status = 'completed'`,
-        [user_id, dateStr]
-      );
-
-      const rate = Math.round((completed / total) * 100);
       successByDay[dayName] = rate;
       totalRate += rate;
 
-      console.log(
-        `[weekly] ${dateStr} (${dayName})`,
-        `total=${total}`,
-        `completed=${completed}`,
-        `rate=${rate}`
-      );
+      console.log(`[weekly] ${dateStr} ${dayName} total=${info.total} completed=${info.completed} rate=${rate}`);
     }
 
     const weeklyAverage = (totalRate / 7).toFixed(1);
-    const bestDay = Object.entries(successByDay)
-      .sort((a, b) => b[1] - a[1])[0][0];
+    const bestDay = Object.entries(successByDay).sort((a, b) => b[1] - a[1])[0][0];
 
     conn.release();
 
-    res.json({
+    return res.json({
       successByDay,
       weeklyAverage,
       bestDay,
       recommendedMissions: [],
     });
-
   } catch (err) {
     if (conn) conn.release();
-    console.error(err);
-    res.status(500).json({ message: "server error" });
+    console.error("❌ /reports/weekly error:", err);
+    return res.status(500).json({ message: "server error" });
   }
 });
-
 
 module.exports = router;

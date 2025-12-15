@@ -51,9 +51,6 @@ router.get("/weekly", async (req, res) => {
     let validDays = 0;
 
     for (let i = 0; i < 7; i++) {
-      console.log("📅 date:", date);
-console.log("📌 missions:", missions);
-console.log("🎥 actions:", logRows.map(l => clean(ACTION_MAP[l.action_type])));
   // 📅 기준 날짜
   const [dateRows] = await conn.query(
     `SELECT CURDATE() - INTERVAL ? DAY AS date`,
@@ -83,6 +80,14 @@ console.log("🎥 actions:", logRows.map(l => clean(ACTION_MAP[l.action_type])))
     [user_id, date, date]
   );
 
+  // 🔍 디버깅 로그는 여기!
+  console.log("📅 date:", date);
+  console.log("📌 missions:", missions);
+  console.log(
+    "🎥 actions:",
+    logRows.map(l => clean(ACTION_MAP[l.action_type] || ""))
+  );
+
   const successSet = new Set();
   for (const log of logRows) {
     const action = clean(ACTION_MAP[log.action_type] || "");
@@ -97,7 +102,7 @@ console.log("🎥 actions:", logRows.map(l => clean(ACTION_MAP[l.action_type])))
       ? Math.round((successCount / missionCount) * 100)
       : 0;
 
-  // 📌 요일 계산 (MySQL 기준)
+  // 📌 요일 계산
   const [dayRows] = await conn.query(
     `SELECT DAYOFWEEK(?) AS day_num`,
     [date]
@@ -111,6 +116,7 @@ console.log("🎥 actions:", logRows.map(l => clean(ACTION_MAP[l.action_type])))
     validDays++;
   }
 }
+
 
     const weeklyAverage =
       validDays > 0 ? (totalRate / validDays).toFixed(1) : 0;

@@ -1,171 +1,68 @@
-// routes/reports.js
-
 const express = require("express");
 const router = express.Router();
 const rbpool = require("../db");
 
-const ACTION_MAP = {
-  C001: "음식을 먹는다",
-  C002: "음료를 마신다",
-  C007: "이를 닦는다",
-  C009: "손을 씻는다",
-  C028: "머리를 손질하다",
-  C033: "모자를 쓴다",
-  C035: "신발을 신는다",
-  C038: "쓰레기를 버린다",
-  C046: "공부하다",
-  C050: "카드게임을 하다",
-  C061: "그릇을 정리하다",
-  C063: "책(서류)를 본다",
-  C069: "전화통화를 하다",
-  C073: "컴퓨터를 한다",
-  C074: "휴대폰을 조작한다",
-  C079: "청소를 한다",
-  C084: "기타를 친다",
-  C090: "반려동물과 논다",
-  C093: "식물에 물을 준다",
-  C098: "스쿼트를 하다",
-  C101: "공놀이를 한다",
-  C112: "춤을 춘다",
-};
-
-function clean(str) {
-  return str.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "").trim();
-}
-
 /* ---------------------------------
    📌 주간 리포트 (/weekly)
+   - routine_reports 테이블 기반
 ----------------------------------*/
 router.get("/weekly", async (req, res) => {
   const { user_id } = req.query;
-  if (!user_id) return res.status(400).json({ message: "user_id required" });
+  if (!user_id) {
+    return res.status(400).json({ message: "user_id required" });
+  }
 
   let conn;
   try {
     conn = await rbpool.getConnection();
 
-    const successByDay = { 월: 0, 화: 0, 수: 0, 목: 0, 금: 0, 토: 0, 일: 0 };
-    const dayMap = { 1: "일", 2: "월", 3: "화", 4: "수", 5: "목", 6: "금", 7: "토" };
+    // ✅ 이번 주 월요일 계산
+    const [[{ monday }]] = await conn.query(`
+      SELECT CURDATE() - INTERVAL (DAYOFWEEK(CURDATE()) - 2) DAY AS monday
+    `);
 
-    let totalRate = 0;
-    let validDays = 0;
+    // ✅ routine_reports 조회
+    const [rows] = await conn.query(
+      `
+      SELECT
+        monday_success_rate,
+        tuesday_success_rate,
+        wednesday_success_rate,
+        thursday_success_rate,
+        friday_success_rate,
+        saturday_success_rate,
+        sunday_success_rate,
+        weekly_average_success_rate,
+        best_day,
+        next_week_goal
+      FROM routine_reports
+      WHERE user_id = ?
+        AND week_start_date = ?
+      `,
+      [user_id, monday]
+    );
 
-    for (let i = 0; i < 7; i++) {
-  // 📅 기준 날짜
-  const [dateRows] = await conn.query(
-    `SELECT CURDATE() - INTERVAL ? DAY AS date`,
-    [i]
-  );
-  const date = dateRows[0].date;
-
-  // 📌 오늘의 미션
-  const [missionRows] = await conn.query(
-    `SELECT mission_description
-     FROM missions
-     WHERE user_id = ?
-     AND created_at = ?`,
-    [user_id, date]
-  );
-
-  const missions = missionRows.map(m => clean(m.mission_description));
-  const missionCount = missions.length;
-
-  // 📌 오늘의 행동 로그
-  const [logRows] = await conn.query(
-    `SELECT action_type
-FROM user_action_log
-WHERE user_id = ?
-AND DATE(detected_at) = ?`,
-    [user_id, date]
-  );
-
-  // 🔍 디버깅 로그는 여기!
-  console.log("📅 date:", date);
-  console.log("📌 missions:", missions);
-  console.log(
-    "🎥 actions:",
-    logRows.map(l => clean(ACTION_MAP[l.action_type] || ""))
-  );
-
-  const successSet = new Set();
-  for (const log of logRows) {
-    const action = clean(ACTION_MAP[log.action_type] || "");
-    if (missions.includes(action)) {
-      successSet.add(action);
-    }
-  }
-
-  const successCount = successSet.size;
-  const rate =
-    missionCount > 0
-      ? Math.round((successCount / missionCount) * 100)
-      : 0;
-
-  // 📌 요일 계산
-  const [dayRows] = await conn.query(
-    `SELECT DAYOFWEEK(?) AS day_num`,
-    [date]
-  );
-
-  const dayName = dayMap[dayRows[0].day_num];
-  successByDay[dayName] = rate;
-
-  if (missionCount > 0) {
-    totalRate += rate;
-    validDays++;
-  }
-}
-
-
-    const weeklyAverage =
-  validDays > 0 ? Number((totalRate / validDays).toFixed(1)) : 0;
-    const bestDay = Object.entries(successByDay)
-      .sort((a, b) => b[1] - a[1])[0][0];
-
-    /* ⭐ 추천 미션 */
-    const recommendedMissions = [];
-
-    const [allLogs] = await conn.query(
-  `SELECT action_type
-   FROM user_action_log
-   WHERE user_id = ?
-   AND detected_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)`,
-  [user_id]
-);
-
-    const phoneCount = allLogs.filter(l => l.action_type === "C074").length;
-    const cleaningCount = allLogs.filter(l => l.action_type === "C079").length;
-    const drinkCount = allLogs.filter(l => l.action_type === "C002").length;
-
-    if (phoneCount > 10) {
-      recommendedMissions.push({
-        icon: "🧘",
-        title: "목·어깨 스트레칭하기",
-        reason: "최근 휴대폰 사용이 많았어요!",
-      });
+    // 📌 리포트 없을 경우
+    if (rows.length === 0) {
+      return res.json(null);
     }
 
-    if (cleaningCount === 0) {
-      recommendedMissions.push({
-        icon: "🧹",
-        title: "책상 정리하기",
-        reason: "정리·정돈 행동이 거의 없었어요!",
-      });
-    }
+    const r = rows[0];
 
-    if (drinkCount === 0) {
-      recommendedMissions.push({
-        icon: "🥤",
-        title: "물 한 잔 마시기",
-        reason: "수분 섭취가 부족했던 한 주였어요!",
-      });
-    }
-
+    // ✅ 프론트가 기대하는 형태로 그대로 반환
     res.json({
-      successByDay,
-      weeklyAverage,
-      bestDay,
-      recommendedMissions: recommendedMissions.slice(0, 3),
+      successByDay: {
+        월: r.monday_success_rate ?? 0,
+        화: r.tuesday_success_rate ?? 0,
+        수: r.wednesday_success_rate ?? 0,
+        목: r.thursday_success_rate ?? 0,
+        금: r.friday_success_rate ?? 0,
+        토: r.saturday_success_rate ?? 0,
+        일: r.sunday_success_rate ?? 0,
+      },
+      weeklyAverage: Number(r.weekly_average_success_rate),
+      bestDay: r.best_day,
+      nextWeekGoal: r.next_week_goal,
     });
 
   } catch (err) {

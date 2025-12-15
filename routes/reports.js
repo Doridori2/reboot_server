@@ -34,7 +34,7 @@ function clean(str) {
 }
 
 /* ---------------------------------
-   📌 주간 리포트 (/weekly)
+   📌 주간 리포트 (최근 7일 기준)
 ----------------------------------*/
 router.get("/weekly", async (req, res) => {
   const { user_id } = req.query;
@@ -47,21 +47,19 @@ router.get("/weekly", async (req, res) => {
     const successByDay = { 월: 0, 화: 0, 수: 0, 목: 0, 금: 0, 토: 0, 일: 0 };
     const dayKor = ["일", "월", "화", "수", "목", "금", "토"];
 
-    // 이번 주 월요일
-    const [[{ monday }]] = await conn.query(`
-      SELECT CURDATE() - INTERVAL (DAYOFWEEK(CURDATE()) - 2) DAY AS monday
-    `);
-
     let totalRate = 0;
 
-    // 월 ~ 일
+    // 🔁 오늘 포함 최근 7일
     for (let i = 0; i < 7; i++) {
-      const date = new Date(monday);
-      date.setDate(date.getDate() + i);
-      const dateStr = date.toISOString().slice(0, 10); // YYYY-MM-DD
-      const dayName = dayKor[date.getDay()];
+      const [[{ date }]] = await conn.query(
+        `SELECT CURDATE() - INTERVAL ? DAY AS date`,
+        [i]
+      );
 
-      // ✅ 1. 그날의 미션
+      const dateStr = date.toISOString().slice(0, 10);
+      const dayName = dayKor[new Date(dateStr).getDay()];
+
+      // 1️⃣ 그날의 미션
       const [missionRows] = await conn.query(
         `SELECT mission_description
          FROM missions
@@ -73,13 +71,12 @@ router.get("/weekly", async (req, res) => {
       const missions = missionRows.map(m => clean(m.mission_description));
       const missionCount = missions.length;
 
-      // 미션이 없으면 성공률 0
       if (missionCount === 0) {
         successByDay[dayName] = 0;
         continue;
       }
 
-      // ✅ 2. 그날의 행동 로그
+      // 2️⃣ 그날의 AI 로그
       const [logRows] = await conn.query(
         `SELECT action_type
          FROM user_action_log
@@ -97,12 +94,16 @@ router.get("/weekly", async (req, res) => {
         }
       }
 
-      const successCount = successSet.size;
-      const rate = Math.round((successCount / missionCount) * 100);
-
+      const rate = Math.round((successSet.size / missionCount) * 100);
       successByDay[dayName] = rate;
       totalRate += rate;
-      console.log(dateStr, dayName, missionCount, successSet.size);
+
+      console.log(
+        `[weekly] ${dateStr} (${dayName})`,
+        `missions=${missionCount}`,
+        `success=${successSet.size}`,
+        `rate=${rate}`
+      );
     }
 
     const weeklyAverage = (totalRate / 7).toFixed(1);
@@ -110,7 +111,6 @@ router.get("/weekly", async (req, res) => {
       .sort((a, b) => b[1] - a[1])[0][0];
 
     conn.release();
-    
 
     res.json({
       successByDay,
